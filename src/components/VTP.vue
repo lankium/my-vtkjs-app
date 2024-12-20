@@ -43,8 +43,21 @@
         </tr>
         <tr>
           <td>
+            <label for="useColorTransfer">Use ColorTransferFunction:</label>
+            <input type="checkbox" id="useColorTransfer" v-model="useColorTransfer" />
+          </td>
+        </tr>
+
+        <tr>
+          <td>
             <label for="scalarBarVisibility">Show Scalar Bar:</label>
             <input type="checkbox" id="scalarBarVisibility" v-model="scalarBarVisible" />
+          </td>
+        </tr>
+        <tr>
+          <td>
+            <label for="numberOfColors:">Number of colors:</label>
+            <input type="number" id="numberOfColors" v-model="numberOfColorsInput" />
           </td>
         </tr>
         <!-- 控制裁剪平面的位置 -->
@@ -96,20 +109,30 @@ import vtkPlane from '@kitware/vtk.js/Common/DataModel/Plane';  // 引入裁剪�
 import vtkMatrixBuilder from '@kitware/vtk.js/Common/Core/MatrixBuilder';
 import vtkScalarBarActor from '@kitware/vtk.js/Rendering/Core/ScalarBarActor';
 import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction';
+import vtkLookupTable from '@kitware/vtk.js/Common/Core/LookupTable';
 
+import { Scale } from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction/Constants';
+
+import * as d3 from 'd3-scale';
+import { formatDefaultLocale } from 'd3-format';
 // 定义响应式数据
 const opacity = ref(1);  // 默认透明度为 1，完全不透明
 
 const minScalarValue = ref(0);
 const maxScalarValue = ref(1);
+
 const scalarBarVisible = ref(true); // 是否显示 scalar bar
+const useColorTransfer = ref(false); // 是否使用颜色转换函数
+const numberOfColorsInput = ref(255);
+
+const lut = ref(null)
 
 const vtkContainer = ref(null);  // 存储VTK渲染区域的引用
 const context = ref(null);  // 存储渲染上下文（包含渲染窗口、渲染器等）
 const representation = ref(2);  // 初始表示方式（2：表面）
 
 let scalarBarActor = vtkScalarBarActor.newInstance();
-const colorTransferFunction = vtkColorTransferFunction.newInstance();
+
 
 
 // 裁剪平面相关数据
@@ -147,20 +170,47 @@ function loadVtpFile(event) {
   }
 }
 
+// Change the number of ticks (TODO: add numberOfTicks to ScalarBarActor)
+function generateTicks(numberOfTicks) {
+  return (helper) => {
+    const lastTickBounds = helper.getLastTickBounds();
+    // compute tick marks for axes
+    const scale = d3
+      .scaleLinear()
+      .domain([0.0, 1.0])
+      .range([lastTickBounds[0], lastTickBounds[1]]);
+    const samples = scale.ticks(numberOfTicks);
+    const ticks = samples.map((tick) => scale(tick));
+    // Replace minus "\u2212" with hyphen-minus "\u002D" so that parseFloat() works
+    formatDefaultLocale({ minus: '\u002D' });
+    const format = scale.tickFormat(
+      ticks[0],
+      ticks[ticks.length - 1],
+      numberOfTicks
+    );
+    const tickStrings = ticks
+      .map(format)
+      .map((tick) => Number(parseFloat(tick).toPrecision(12)).toPrecision()); // d3 sometimes adds unwanted whitespace
+    helper.setTicks(ticks);
+    helper.setTickStrings(tickStrings);
+  };
+}
+
 // 使用加载的VTP数据更新渲染器
 function updateRendererWithVtp(polyData) {
   if (context.value) {
     const { actor, mapper, renderWindow, renderer } = context.value;
-
+    lut.value = mapper.getLookupTable();
     console.log(polyData.getPointData().getScalars());
 
     // 获取标量数据并将其应用到模型
     const scalars = polyData.getPointData().getScalars();
-
-    let lut = mapper.getLookupTable();
+    mapper.setColorModeToMapScalars();
+    lut.value.setVectorModeToMagnitude();
     if (scalars) {
       // 获取密度数据的名称并应用到颜色映射
       console.log("Scalar data name:", scalars.getName());
+      console.log("Scalar data range:", scalars.getRange());
 
       // 获取密度值的最小值和最大值
       const scalarRange = scalars.getRange();
@@ -171,13 +221,17 @@ function updateRendererWithVtp(polyData) {
       // scalars.setRange(minScalarValue.value, maxScalarValue.value);
 
       // 设置颜色映射
-      colorTransferFunction.addRGBPoint(minScalarValue.value, 0.0, 0.0, 1.0);  // 最小密度 -> 蓝色
-      colorTransferFunction.addRGBPoint(maxScalarValue.value, 1.0, 0.0, 0.0);  // 最大密度 -> 红色
-
-      mapper.setLookupTable(colorTransferFunction);
+      // const colorTransferFunction = vtkColorTransferFunction.newInstance();
+      // colorTransferFunction.addRGBPoint(minScalarValue.value, 0.0, 0.0, 1.0);  // 最小密度 -> 蓝色
+      // colorTransferFunction.addRGBPoint(maxScalarValue.value, 1.0, 0.0, 0.0);  // 最大密度 -> 红色
+      // mapper.setLookupTable(colorTransferFunction);
       mapper.setInputData(polyData);  // 更新 Mapper 的输入数据为加载的 VTP 数据
     }
-    scalarBarActor.setScalarsToColors(lut);
+    // 设置Mapper的输入数据为加载的VTP数据
+    mapper.setInputData(polyData);
+
+    lut.value.setRange(parseFloat(minScalarValue.value), parseFloat(maxScalarValue.value));
+    scalarBarActor.setScalarsToColors(lut.value);
     // 设置 ScalarBar 的显示
     if (scalarBarVisible.value) {
       renderer.addActor(scalarBarActor);
@@ -215,8 +269,7 @@ function updateRendererWithVtp(polyData) {
     clipPlane2.setOrigin(clipPlane2Origin);
     clipPlane2.setNormal(clipPlane2Normal);
     mapper.addClippingPlane(clipPlane2);
-    // 设置Mapper的输入数据为加载的VTP数据
-    mapper.setInputData(polyData);
+
 
     // 根据当前选择的表示方式设置Actor的显示属性
     actor.getProperty().setRepresentation(representation.value);
@@ -253,6 +306,7 @@ watch(minScalarValue, () => {
     renderWindow.render();
   }
 });
+
 // 监听 Scalar 范围变化
 watch(maxScalarValue, () => {
   if (context.value) {
@@ -279,6 +333,58 @@ watch(scalarBarVisible, () => {
     renderWindow.render()
   }
 });
+
+watch(useColorTransfer, () => {
+  // 设置颜色映射
+  if (context.value) {
+    const { mapper, renderWindow } = context.value;
+    if (useColorTransfer.value) {
+      console.log(1);
+
+      const ctf = vtkColorTransferFunction.newInstance({
+        discretize: true,
+        numberOfValues: parseInt(numberOfColorsInput.value, 10),
+        scale: Scale.LOG10,
+      });
+      ctf.addRGBPoint(1, 0.0, 1.0, 0.0);  // 最大密度 -> 红色
+      // 中间密度 -> 绿色
+      ctf.addRGBPoint(0, 0.0, 0.0, 1.0);  // 最小密度 -> 蓝色
+      mapper.setLookupTable(ctf);
+    } else {
+      const numberOfColors = parseInt(numberOfColorsInput.value, 10);
+      mapper.setLookupTable(vtkLookupTable.newInstance({ numberOfColors }));
+    }
+    lut.value = mapper.getLookupTable();
+    lut.value.setRange(parseFloat(minScalarValue.value), parseFloat(maxScalarValue.value));
+    scalarBarActor.setScalarsToColors(lut.value);
+    renderWindow.render()
+  }
+})
+
+watch(numberOfColorsInput, () => {
+  if (context.value) {
+    const { mapper, renderWindow } = context.value;
+    const lut = mapper.getLookupTable();
+    console.log(lut);
+
+    if (lut.isA('vtkLookupTable')) {
+      console.log(1);
+      lut.setNumberOfColors(parseInt(numberOfColors.value, 10));
+      lut.modified();
+      lut.build();
+    } else {
+      console.log(2);
+      // lut.setNumberOfValues(parseInt(numberOfColorsInput.value, 10));
+      console.log(lut.getNumberOfValues());
+      const numberOfColors = parseInt(numberOfColorsInput.value, 10);
+      mapper.setLookupTable(vtkLookupTable.newInstance({ numberOfColors }));
+    }
+    lut.modified();
+    scalarBarActor.setScalarsToColors(lut);
+    scalarBarActor.modified();
+    renderWindow.render();
+  }
+})
 
 // 观察表示方式的变化，并更新渲染器
 watch(representation, () => {
@@ -368,16 +474,21 @@ onMounted(() => {
 
 
     // 创建Mapper
-    const mapper = vtkMapper.newInstance();
-    let lut = mapper.getLookupTable();
-    // 设置标量数据范围
-    // 设置颜色映射
-    // colorTransferFunction.addRGBPoint(0, 0.0, 0.0, 1.0);  // 最小密度 -> 蓝色
-    // colorTransferFunction.addRGBPoint(1, 1.0, 0.0, 0.0);  // 最大密度 -> 红色
-    mapper.setLookupTable(colorTransferFunction);
-    scalarBarActor.setVisibility(scalarBarVisible.value);
+    const mapper = vtkMapper.newInstance({
+      interpolateScalarsBeforeMapping: true,
+      useLookupTableScalarRange: false,
+      lookupTable: vtkLookupTable.newInstance(),
+      scalarVisibility: true,
+    });
 
-    scalarBarActor.setScalarsToColors(lut);
+    // 设置标量数据范围
+
+    lut.value = mapper.getLookupTable();
+    lut.value.setRange(parseFloat(minScalarValue.value), parseFloat(maxScalarValue.value));
+    // scalarBarActor.setAutomated(true)
+    // scalarBarActor.setVisibility(scalarBarVisible.value);
+    scalarBarActor.setGenerateTicks(generateTicks(10));
+    scalarBarActor.setScalarsToColors(lut.value);
     // 设置 ScalarBar 的显示
 
     // 创建Actor并将Mapper关联到Actor
