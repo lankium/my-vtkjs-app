@@ -60,37 +60,6 @@
             <input type="number" id="numberOfColors" v-model="numberOfColorsInput" />
           </td>
         </tr>
-        <!-- 控制裁剪平面的位置 -->
-        <tr>
-          <td>
-            <!-- 平面1位置 -->
-            <label for="clipPlane1Position">Clip Plane 1 Position:</label>
-            <input type="range" id="clipPlane1Position" :min="minX" :max="maxX" :step="(maxX - minX) / 200"
-              v-model="clipPlane1Position" />
-          </td>
-        </tr>
-        <tr>
-          <td>
-            <!-- 平面2位置 -->
-            <label for="clipPlane2Position">Clip Plane 2 Position:</label>
-            <input type="range" id="clipPlane2Position" :min="minZ" :max="maxZ" :step="(maxZ - minZ) / 200"
-              v-model="clipPlane2Position" />
-          </td>
-        </tr>
-        <tr>
-          <td>
-            <!-- 控制平面1旋转 -->
-            <label for="clipPlane1Rotation">Clip Plane 1 Rotation:</label>
-            <input type="range" id="clipPlane1Rotation" min="0" max="180" step="1" v-model="clipPlane1RotationAngle" />
-          </td>
-        </tr>
-        <tr>
-          <td>
-            <!-- 控制平面2旋转 -->
-            <label for="clipPlane2Rotation">Clip Plane 2 Rotation:</label>
-            <input type="range" id="clipPlane2Rotation" min="0" max="180" step="1" v-model="clipPlane2RotationAngle" />
-          </td>
-        </tr>
       </tbody>
     </table>
   </div>
@@ -110,9 +79,6 @@ import vtkMatrixBuilder from '@kitware/vtk.js/Common/Core/MatrixBuilder';
 import vtkScalarBarActor from '@kitware/vtk.js/Rendering/Core/ScalarBarActor';
 import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction';
 import vtkLookupTable from '@kitware/vtk.js/Common/Core/LookupTable';
-
-import vtkImplicitPlaneWidget from '@kitware/vtk.js/Widgets/Widgets3D/ImplicitPlaneWidget';
-import vtkWidgetManager from '@kitware/vtk.js/Widgets/Core/WidgetManager';
 
 import { Scale } from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction/Constants';
 
@@ -136,24 +102,6 @@ const representation = ref(2);  // 初始表示方式（2：表面）
 
 let scalarBarActor = vtkScalarBarActor.newInstance();
 
-// 裁剪平面相关数据
-// 创建两个裁剪平面
-const clipPlane1 = vtkPlane.newInstance();
-const clipPlane2 = vtkPlane.newInstance();
-const clipPlane1Position = ref(0);  // 平面1的位置
-const clipPlane2Position = ref(0);  // 平面2的位置
-const clipPlane1RotationAngle = ref(0);  // 平面1的旋转角度
-const clipPlane2RotationAngle = ref(0);  // 平面2的旋转角度
-const clipPlane1Normal = [1, 0, 0];
-const clipPlane2Normal = [0, 0, -1];
-
-const minX = ref(-100);
-const maxX = ref(100);
-// const minY = ref(-100);
-// const maxY = ref(100);
-const minZ = ref(-100);
-const maxZ = ref(100);
-
 // 加载VTP文件
 function loadVtpFile(event) {
   const file = event.target.files[0];  // 获取用户选择的文件
@@ -171,29 +119,22 @@ function loadVtpFile(event) {
   }
 }
 
-// Change the number of ticks (TODO: add numberOfTicks to ScalarBarActor)
+// 生成标量条刻度
 function generateTicks(numberOfTicks) {
   return (helper) => {
-    const lastTickBounds = helper.getLastTickBounds();
-    // compute tick marks for axes
-    const scale = d3
-      .scaleLinear()
-      .domain([0.0, 1.0])
-      .range([lastTickBounds[0], lastTickBounds[1]]);
-    const samples = scale.ticks(numberOfTicks);
-    const ticks = samples.map((tick) => scale(tick));
-    // Replace minus "\u2212" with hyphen-minus "\u002D" so that parseFloat() works
+    const lastTickBounds = helper.getLastTickBounds(); // 获取刻度范围
+    const scale = d3.scaleLinear().domain([0.0, 1.0]).range([lastTickBounds[0], lastTickBounds[1]]); // 生成线性刻度
+    const samples = scale.ticks(numberOfTicks); // 根据刻度数量生成样本
+    const ticks = samples.map((tick) => scale(tick)); // 转换样本为刻度值
+
+    // 格式化刻度值，替换 Unicode 减号
     formatDefaultLocale({ minus: '\u002D' });
-    const format = scale.tickFormat(
-      ticks[0],
-      ticks[ticks.length - 1],
-      numberOfTicks
-    );
-    const tickStrings = ticks
-      .map(format)
-      .map((tick) => Number(parseFloat(tick).toPrecision(12)).toPrecision()); // d3 sometimes adds unwanted whitespace
-    helper.setTicks(ticks);
-    helper.setTickStrings(tickStrings);
+    const format = scale.tickFormat(ticks[0], ticks[ticks.length - 1], numberOfTicks);
+    const tickStrings = ticks.map(format).map((tick) =>
+      Number(parseFloat(tick).toPrecision(12)).toPrecision()
+    ); // 确保刻度字符串无多余空格
+    helper.setTicks(ticks); // 设置刻度值
+    helper.setTickStrings(tickStrings); // 设置刻度标签
   };
 }
 
@@ -202,10 +143,13 @@ function updateRendererWithVtp(polyData) {
   if (context.value) {
     const { actor, mapper, renderWindow, renderer } = context.value;
     lut.value = mapper.getLookupTable();
+    console.log('polyData', polyData);
+
     console.log('polyData.getPointData()', polyData.getPointData());
 
     console.log('polyData.getPointData().getScalars()', polyData.getPointData().getScalars());
-
+    console.log('polyData.getCellData', polyData.getCellData());
+    console.log('polyData.getCellData.getScalars()', polyData.getCellData().getScalars().getRange());
     // 获取标量数据并将其应用到模型
     const scalars = polyData.getPointData().getScalars();
 
@@ -215,21 +159,11 @@ function updateRendererWithVtp(polyData) {
       // 获取密度数据的名称并应用到颜色映射
       console.log("Scalar data name:", scalars.getName());
       console.log("Scalar data range:", scalars.getRange());
-      console.log("scalars.getData()", scalars.getData());
       // 获取密度值的最小值和最大值
       const scalarRange = scalars.getRange();
       minScalarValue.value = scalarRange[0];
       maxScalarValue.value = scalarRange[1];
 
-      // 设置标量数据范围
-      // scalars.setRange(minScalarValue.value, maxScalarValue.value);
-
-      // 设置颜色映射
-      // const colorTransferFunction = vtkColorTransferFunction.newInstance();
-      // colorTransferFunction.addRGBPoint(minScalarValue.value, 0.0, 0.0, 1.0);  // 最小密度 -> 蓝色
-      // colorTransferFunction.addRGBPoint(maxScalarValue.value, 1.0, 0.0, 0.0);  // 最大密度 -> 红色
-      // mapper.setLookupTable(colorTransferFunction);
-      mapper.setInputData(polyData);  // 更新 Mapper 的输入数据为加载的 VTP 数据
     }
     // 设置Mapper的输入数据为加载的VTP数据
     mapper.setInputData(polyData);
@@ -243,58 +177,11 @@ function updateRendererWithVtp(polyData) {
       renderer.removeActor(scalarBarActor);
     }
 
-    const bounds = polyData.getBounds();
-    minX.value = -Math.max(Math.abs(bounds[0]), Math.abs(bounds[1]), Math.abs(bounds[2]), Math.abs(bounds[3]));
-    maxX.value = Math.max(Math.abs(bounds[0]), Math.abs(bounds[1]), Math.abs(bounds[2]), Math.abs(bounds[3]));
-    // console.log(Math.max(Math.abs(bounds[0]), Math.abs(bounds[1])));
-
-    // minY.value = bounds[2];
-    // maxY.value = bounds[3];
-    minZ.value = -Math.max(Math.abs(bounds[4]), Math.abs(bounds[5]));
-    maxZ.value = Math.max(Math.abs(bounds[4]), Math.abs(bounds[5]));
-
-    clipPlane1Position.value = minX.value
-    clipPlane2Position.value = minZ.value
-
-    const clipPlane1Origin = [
-      clipPlane1Position.value * clipPlane1Normal[0],
-      clipPlane1Position.value * clipPlane1Normal[1],
-      clipPlane1Position.value * clipPlane1Normal[2],
-    ];
-    const clipPlane2Origin = [
-      clipPlane2Position.value * clipPlane2Normal[0],
-      clipPlane2Position.value * clipPlane2Normal[1],
-      clipPlane2Position.value * clipPlane2Normal[2],
-    ];
-    clipPlane1.setOrigin(clipPlane1Origin);
-    clipPlane1.setNormal(clipPlane1Normal);
-    mapper.addClippingPlane(clipPlane1);
-
-    clipPlane2.setOrigin(clipPlane2Origin);
-    clipPlane2.setNormal(clipPlane2Normal);
-    mapper.addClippingPlane(clipPlane2);
-    // ----------------------------------------------------------------------------
-    // Widget manager
-    // ----------------------------------------------------------------------------
-
-    const widgetManager = vtkWidgetManager.newInstance();
-    widgetManager.setRenderer(renderer);
-
-    const widget = vtkImplicitPlaneWidget.newInstance();
-    widget.getWidgetState().setNormal(0, 0, 1);
-    widget.placeWidget(bounds);
-    widget.setPlaceFactor(3);
-
-    widgetManager.addWidget(widget);
-
     // 根据当前选择的表示方式设置Actor的显示属性
     actor.getProperty().setRepresentation(representation.value);
 
-    // 重新应用裁剪平面
-    // addClippingPlanes();
     // 重置相机并重新渲染
     renderer.resetCamera();
-    widgetManager.enablePicking();
     renderWindow.render();
   }
 }
@@ -317,9 +204,9 @@ watch(minScalarValue, () => {
   if (context.value) {
     const { mapper, renderWindow } = context.value;
     // 更新标量数据范围
-    let lut = mapper.getLookupTable();
+    lut.value = mapper.getLookupTable();
     mapper.setUseLookupTableScalarRange(true);
-    lut.setRange(parseFloat(minScalarValue.value), lut.getRange()[1]);
+    lut.value.setRange(parseFloat(minScalarValue.value), lut.value.getRange()[1]);
     renderWindow.render();
   }
 });
@@ -329,22 +216,23 @@ watch(maxScalarValue, () => {
   if (context.value) {
     const { mapper, renderWindow } = context.value;
     // 更新标量数据范围
-    let lut = mapper.getLookupTable();
+    lut.value = mapper.getLookupTable();
     mapper.setUseLookupTableScalarRange(true);
-    lut.setRange(lut.getRange()[0], parseFloat(maxScalarValue.value));
+    lut.value.setRange(lut.value.getRange()[0], parseFloat(maxScalarValue.value));
     renderWindow.render();
   }
 });
 
 // 监听 Scalar Bar 显示状态变化
 watch(scalarBarVisible, () => {
-
   if (context.value) {
-    const { renderer, renderWindow } = context.value;
+    const { mapper, renderer, renderWindow } = context.value;
     if (scalarBarVisible.value) {
+      mapper.setScalarVisibility(true);
       renderer.addActor(scalarBarActor);
-    } else {
 
+    } else {
+      mapper.setScalarVisibility(false);
       renderer.removeActor(scalarBarActor);
     }
     renderWindow.render()
@@ -364,9 +252,7 @@ watch(useColorTransfer, () => {
       ctf.addRGBPoint(1, 1.0, 0.0, 0.0);  // 最大密度 -> 红色
       // 中间密度 -> 绿色
       ctf.addRGBPoint(0, 0.0, 0.0, 1.0);  // 最小密度 -> 蓝色
-
       mapper.setLookupTable(ctf);
-
     } else {
       const numberOfColors = parseInt(numberOfColorsInput.value, 10);
       mapper.setLookupTable(vtkLookupTable.newInstance({ numberOfColors }));
@@ -396,7 +282,7 @@ watch(numberOfColorsInput, () => {
     }
     lut.modified();
     mapper.setColorModeToMapScalars();
-    lut.value.setVectorModeToMagnitude();
+
     scalarBarActor.setScalarsToColors(lut);
     scalarBarActor.modified();
     renderWindow.render();
@@ -410,74 +296,12 @@ watch(representation, () => {
 
     // 根据表示方式设置Actor的属性
     actor.getProperty().setRepresentation(Number(representation.value));
-    // 重新应用裁剪平面
-    // addClippingPlanes();
+
     // 重新渲染
-    // renderer.resetCamera();
     renderWindow.render();
   }
 });
 
-// 监听裁剪平面1位置的变化
-watch(clipPlane1Position, () => {
-  if (context.value) {
-    const { renderWindow } = context.value;
-
-    // 重新添加裁剪平面
-    const clipPlane1Origin = [
-      clipPlane1Position.value * clipPlane1Normal[0],
-      clipPlane1Position.value * clipPlane1Normal[1],
-      clipPlane1Position.value * clipPlane1Normal[2],
-    ];
-    clipPlane1.setOrigin(clipPlane1Origin);
-
-    // 重新渲染
-    // renderer.resetCamera();
-    renderWindow.render();
-  }
-});
-// 监听裁剪平面2位置的变化
-watch(clipPlane2Position, () => {
-  if (context.value) {
-    const { renderWindow } = context.value;
-
-    // 重新添加裁剪平面
-    const clipPlane2Origin = [
-      clipPlane2Position.value * clipPlane2Normal[0],
-      clipPlane2Position.value * clipPlane2Normal[1],
-      clipPlane2Position.value * clipPlane2Normal[2],
-    ];
-    clipPlane2.setOrigin(clipPlane2Origin);
-    // 重新渲染
-    // renderer.resetCamera();
-    renderWindow.render();
-  }
-});
-// 监听裁剪平面1旋转的变化
-watch(clipPlane1RotationAngle, (newVal, oldVal) => {
-  const { renderWindow } = context.value;
-  vtkMatrixBuilder
-    .buildFromDegree()
-    .rotate(Number(newVal) - Number(oldVal), [0, 0, 1])
-    .apply(clipPlane1Normal);
-
-  // 更新裁剪平面的位置
-  clipPlane1.setNormal(clipPlane1Normal);
-  renderWindow.render();
-})
-// 监听裁剪平面2旋转的变化
-watch(clipPlane2RotationAngle, (newVal, oldVal) => {
-  const { renderWindow } = context.value;
-
-  vtkMatrixBuilder
-    .buildFromDegree()
-    .rotate(Number(newVal) - Number(oldVal), [0, 1, 0])
-    .apply(clipPlane2Normal);
-  // 更新裁剪平面的位置
-
-  clipPlane2.setNormal(clipPlane2Normal);
-  renderWindow.render();
-})
 
 // 组件挂载时初始化VTK渲染
 onMounted(() => {
@@ -500,8 +324,7 @@ onMounted(() => {
 
     lut.value = mapper.getLookupTable();
     lut.value.setRange(parseFloat(minScalarValue.value), parseFloat(maxScalarValue.value));
-    // scalarBarActor.setAutomated(true)
-    // scalarBarActor.setVisibility(scalarBarVisible.value);
+
     scalarBarActor.setGenerateTicks(generateTicks(10));
     scalarBarActor.setScalarsToColors(lut.value);
     // 设置 ScalarBar 的显示
@@ -525,7 +348,7 @@ onMounted(() => {
     renderer.addActor(scalarBarActor);
     // 重置相机并开始渲染
     renderer.resetCamera();
-    renderWindow.render();
+    // renderWindow.render();
 
     // 存储上下文，包含渲染器、窗口、Actor和Mapper
     context.value = {
