@@ -80,7 +80,6 @@ onMounted(() => {
   const widgetInstance = widgetManager.addWidget(planeWidget, 'manipulator');
 
   // 初始化平面 Widget 的位置和参数
-  // widgetInstance.setPlaceFactor(1.25);
   widgetInstance.placeWidget(polyData.getBounds());
 
   // 设置平面控件的初始法线和原点

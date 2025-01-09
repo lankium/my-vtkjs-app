@@ -105,14 +105,12 @@ import vtkFullScreenRenderWindow from '@kitware/vtk.js/Rendering/Misc/FullScreen
 import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor';
 import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper';
 import vtkXMLPolyDataReader from '@kitware/vtk.js/IO/XML/XMLPolyDataReader';  // 引入VTP文件读取器
+
 import vtkPlane from '@kitware/vtk.js/Common/DataModel/Plane';  // 引入裁剪平面
 import vtkMatrixBuilder from '@kitware/vtk.js/Common/Core/MatrixBuilder';
 import vtkScalarBarActor from '@kitware/vtk.js/Rendering/Core/ScalarBarActor';
 import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction';
 import vtkLookupTable from '@kitware/vtk.js/Common/Core/LookupTable';
-
-import vtkImplicitPlaneWidget from '@kitware/vtk.js/Widgets/Widgets3D/ImplicitPlaneWidget';
-import vtkWidgetManager from '@kitware/vtk.js/Widgets/Core/WidgetManager';
 
 import { Scale } from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction/Constants';
 
@@ -189,6 +187,7 @@ function generateTicks(numberOfTicks) {
       ticks[ticks.length - 1],
       numberOfTicks
     );
+
     const tickStrings = ticks
       .map(format)
       .map((tick) => Number(parseFloat(tick).toPrecision(12)).toPrecision()); // d3 sometimes adds unwanted whitespace
@@ -202,12 +201,15 @@ function updateRendererWithVtp(polyData) {
   if (context.value) {
     const { actor, mapper, renderWindow, renderer } = context.value;
     lut.value = mapper.getLookupTable();
-    console.log('polyData.getPointData()', polyData.getPointData());
+    console.log(polyData);
 
-    console.log('polyData.getPointData().getScalars()', polyData.getPointData().getScalars());
+    // console.log('polyData.getCellData().getScalars().getName()', polyData.getCellData().getScalars().getName());
 
+    // console.log('polyData.getCellData().getScalars().getRange()', polyData.getCellData().getScalars().getRange());
+    // console.log('polyData.getCellData().getScalars().getRange()', polyData.getCellData().getScalars().getRange());
     // 获取标量数据并将其应用到模型
-    const scalars = polyData.getPointData().getScalars();
+    const scalars = polyData.getCellData().getScalars();
+    console.log(scalars);
 
     mapper.setColorModeToMapScalars();
     lut.value.setVectorModeToMagnitude();
@@ -215,7 +217,6 @@ function updateRendererWithVtp(polyData) {
       // 获取密度数据的名称并应用到颜色映射
       console.log("Scalar data name:", scalars.getName());
       console.log("Scalar data range:", scalars.getRange());
-      console.log("scalars.getData()", scalars.getData());
       // 获取密度值的最小值和最大值
       const scalarRange = scalars.getRange();
       minScalarValue.value = scalarRange[0];
@@ -231,7 +232,9 @@ function updateRendererWithVtp(polyData) {
       // mapper.setLookupTable(colorTransferFunction);
       mapper.setInputData(polyData);  // 更新 Mapper 的输入数据为加载的 VTP 数据
     }
-    // 设置Mapper的输入数据为加载的VTP数据
+
+    // 获取简化后的 PolyData
+
     mapper.setInputData(polyData);
 
     lut.value.setRange(parseFloat(minScalarValue.value), parseFloat(maxScalarValue.value));
@@ -242,8 +245,10 @@ function updateRendererWithVtp(polyData) {
     } else {
       renderer.removeActor(scalarBarActor);
     }
-
+    polyData.ComputeBounds()
     const bounds = polyData.getBounds();
+    console.log('bounds', bounds);
+    // -90.0999984741211, 65.39999389648438, -15.600000381469727, 6539.39990234375, -1940.18994140625, 12.8100004196167
     minX.value = -Math.max(Math.abs(bounds[0]), Math.abs(bounds[1]), Math.abs(bounds[2]), Math.abs(bounds[3]));
     maxX.value = Math.max(Math.abs(bounds[0]), Math.abs(bounds[1]), Math.abs(bounds[2]), Math.abs(bounds[3]));
     // console.log(Math.max(Math.abs(bounds[0]), Math.abs(bounds[1])));
@@ -277,16 +282,6 @@ function updateRendererWithVtp(polyData) {
     // Widget manager
     // ----------------------------------------------------------------------------
 
-    const widgetManager = vtkWidgetManager.newInstance();
-    widgetManager.setRenderer(renderer);
-
-    const widget = vtkImplicitPlaneWidget.newInstance();
-    widget.getWidgetState().setNormal(0, 0, 1);
-    widget.placeWidget(bounds);
-    widget.setPlaceFactor(3);
-
-    widgetManager.addWidget(widget);
-
     // 根据当前选择的表示方式设置Actor的显示属性
     actor.getProperty().setRepresentation(representation.value);
 
@@ -294,7 +289,6 @@ function updateRendererWithVtp(polyData) {
     // addClippingPlanes();
     // 重置相机并重新渲染
     renderer.resetCamera();
-    widgetManager.enablePicking();
     renderWindow.render();
   }
 }
@@ -410,8 +404,6 @@ watch(representation, () => {
 
     // 根据表示方式设置Actor的属性
     actor.getProperty().setRepresentation(Number(representation.value));
-    // 重新应用裁剪平面
-    // addClippingPlanes();
     // 重新渲染
     // renderer.resetCamera();
     renderWindow.render();
@@ -518,6 +510,8 @@ onMounted(() => {
     } else {
       renderer.removeActor(scalarBarActor);
     }
+    const str = '0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.2 0.5 0.5 0.5 0.5 0.5'
+    console.log(str.split(' ').length);
 
     // 将Actor添加到渲染器
     renderer.addActor(actor);

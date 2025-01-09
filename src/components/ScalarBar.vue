@@ -74,8 +74,7 @@ import vtkFullScreenRenderWindow from '@kitware/vtk.js/Rendering/Misc/FullScreen
 import vtkActor from '@kitware/vtk.js/Rendering/Core/Actor';
 import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper';
 import vtkXMLPolyDataReader from '@kitware/vtk.js/IO/XML/XMLPolyDataReader';  // 引入VTP文件读取器
-import vtkPlane from '@kitware/vtk.js/Common/DataModel/Plane';  // 引入裁剪平面
-import vtkMatrixBuilder from '@kitware/vtk.js/Common/Core/MatrixBuilder';
+
 import vtkScalarBarActor from '@kitware/vtk.js/Rendering/Core/ScalarBarActor';
 import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction';
 import vtkLookupTable from '@kitware/vtk.js/Common/Core/LookupTable';
@@ -93,8 +92,6 @@ const maxScalarValue = ref(1);
 const scalarBarVisible = ref(true); // 是否显示 scalar bar
 const useColorTransfer = ref(false); // 是否使用颜色转换函数
 const numberOfColorsInput = ref(255);
-
-const lut = ref(null)
 
 const vtkContainer = ref(null);  // 存储VTK渲染区域的引用
 const context = ref(null);  // 存储渲染上下文（包含渲染窗口、渲染器等）
@@ -142,19 +139,16 @@ function generateTicks(numberOfTicks) {
 function updateRendererWithVtp(polyData) {
   if (context.value) {
     const { actor, mapper, renderWindow, renderer } = context.value;
-    lut.value = mapper.getLookupTable();
+    const lut = mapper.getLookupTable();
     console.log('polyData', polyData);
 
-    console.log('polyData.getPointData()', polyData.getPointData());
-
-    console.log('polyData.getPointData().getScalars()', polyData.getPointData().getScalars());
     console.log('polyData.getCellData', polyData.getCellData());
     console.log('polyData.getCellData.getScalars()', polyData.getCellData().getScalars().getRange());
     // 获取标量数据并将其应用到模型
-    const scalars = polyData.getPointData().getScalars();
+    const scalars = polyData.getCellData().getScalars();
 
     mapper.setColorModeToMapScalars();
-    lut.value.setVectorModeToMagnitude();
+    lut.setVectorModeToMagnitude();
     if (scalars) {
       // 获取密度数据的名称并应用到颜色映射
       console.log("Scalar data name:", scalars.getName());
@@ -168,8 +162,8 @@ function updateRendererWithVtp(polyData) {
     // 设置Mapper的输入数据为加载的VTP数据
     mapper.setInputData(polyData);
 
-    lut.value.setRange(parseFloat(minScalarValue.value), parseFloat(maxScalarValue.value));
-    scalarBarActor.setScalarsToColors(lut.value);
+    lut.setRange(parseFloat(minScalarValue.value), parseFloat(maxScalarValue.value));
+    scalarBarActor.setScalarsToColors(lut);
     // 设置 ScalarBar 的显示
     if (scalarBarVisible.value) {
       renderer.addActor(scalarBarActor);
@@ -204,9 +198,9 @@ watch(minScalarValue, () => {
   if (context.value) {
     const { mapper, renderWindow } = context.value;
     // 更新标量数据范围
-    lut.value = mapper.getLookupTable();
+    const lut = mapper.getLookupTable();
     mapper.setUseLookupTableScalarRange(true);
-    lut.value.setRange(parseFloat(minScalarValue.value), lut.value.getRange()[1]);
+    lut.setRange(parseFloat(minScalarValue.value), lut.getRange()[1]);
     renderWindow.render();
   }
 });
@@ -216,9 +210,9 @@ watch(maxScalarValue, () => {
   if (context.value) {
     const { mapper, renderWindow } = context.value;
     // 更新标量数据范围
-    lut.value = mapper.getLookupTable();
+    const lut = mapper.getLookupTable();
     mapper.setUseLookupTableScalarRange(true);
-    lut.value.setRange(lut.value.getRange()[0], parseFloat(maxScalarValue.value));
+    lut.setRange(lut.getRange()[0], parseFloat(maxScalarValue.value));
     renderWindow.render();
   }
 });
@@ -249,20 +243,27 @@ watch(useColorTransfer, () => {
         numberOfValues: parseInt(numberOfColorsInput.value, 10),
         scale: Scale.LOG10,
       });
-      ctf.addRGBPoint(1, 1.0, 0.0, 0.0);  // 最大密度 -> 红色
-      // 中间密度 -> 绿色
-      ctf.addRGBPoint(0, 0.0, 0.0, 1.0);  // 最小密度 -> 蓝色
+      // 设置最大密度 -> 红色
+      ctf.addRGBPoint(1, 1.0, 0.0, 0.0);
+
+      // 设置中间密度（假设为 0.5），设置为白色
+      ctf.addRGBPoint(0.5, 1.0, 1.0, 1.0);  // 中间 -> 白色
+
+      // 设置最小密度 -> 蓝色
+      ctf.addRGBPoint(0, 0.0, 0.0, 1.0);
+
+      // 应用颜色映射
       mapper.setLookupTable(ctf);
     } else {
       const numberOfColors = parseInt(numberOfColorsInput.value, 10);
       mapper.setLookupTable(vtkLookupTable.newInstance({ numberOfColors }));
     }
 
-    lut.value = mapper.getLookupTable();
-    lut.value.setRange(parseFloat(minScalarValue.value), parseFloat(maxScalarValue.value));
+    const lut = mapper.getLookupTable();
+    lut.setRange(parseFloat(minScalarValue.value), parseFloat(maxScalarValue.value));
     mapper.setColorModeToMapScalars();
-    lut.value.setVectorModeToMagnitude();
-    scalarBarActor.setScalarsToColors(lut.value);
+    lut.setVectorModeToMagnitude();
+    scalarBarActor.setScalarsToColors(lut);
     renderWindow.render()
   }
 })
@@ -313,20 +314,15 @@ onMounted(() => {
     });
 
     // 创建Mapper
-    const mapper = vtkMapper.newInstance({
-      interpolateScalarsBeforeMapping: true,
-      useLookupTableScalarRange: false,
-      lookupTable: vtkLookupTable.newInstance(),
-      scalarVisibility: true,
-    });
+    const mapper = vtkMapper.newInstance();
 
     // 设置标量数据范围
 
-    lut.value = mapper.getLookupTable();
-    lut.value.setRange(parseFloat(minScalarValue.value), parseFloat(maxScalarValue.value));
+    const lut = mapper.getLookupTable();
+    lut.setRange(parseFloat(minScalarValue.value), parseFloat(maxScalarValue.value));
 
     scalarBarActor.setGenerateTicks(generateTicks(10));
-    scalarBarActor.setScalarsToColors(lut.value);
+    scalarBarActor.setScalarsToColors(lut);
     // 设置 ScalarBar 的显示
 
     // 创建Actor并将Mapper关联到Actor
