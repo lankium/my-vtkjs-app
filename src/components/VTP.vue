@@ -66,7 +66,7 @@
             <!-- 平面1位置 -->
             <label for="clipPlane1Position">Clip Plane 1 Position:</label>
             <input type="range" id="clipPlane1Position" :min="minX" :max="maxX" :step="(maxX - minX) / 200"
-              v-model="clipPlane1Position" />
+              v-model="clipPlane1Position" @input="change()" />
           </td>
         </tr>
         <tr>
@@ -116,6 +116,8 @@ import { Scale } from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction/Cons
 
 import * as d3 from 'd3-scale';
 import { formatDefaultLocale } from 'd3-format';
+
+import vtkThresholdPoints from '@kitware/vtk.js/Filters/Core/ThresholdPoints';
 // 定义响应式数据
 const opacity = ref(1);  // 默认透明度为 1，完全不透明
 
@@ -201,15 +203,38 @@ function updateRendererWithVtp(polyData) {
   if (context.value) {
     const { actor, mapper, renderWindow, renderer } = context.value;
     lut.value = mapper.getLookupTable();
-    console.log(polyData);
+    console.log(polyData.getNumberOfPoints());
+    console.log(polyData.getPointData());
 
+    console.log(polyData.getPointData().getArrayByIndex(0).getName());
+    console.log(polyData.getPointData().getArrayByIndex(0).getData());
+
+    console.log(polyData.getCellData().getArrayByIndex(0).getData());
+
+    const thresholder = vtkThresholdPoints.newInstance();
+    thresholder.setInputData(polyData);
+    console.log(thresholder);
+    thresholder.setCriterias([
+      {
+        arrayName: 'Ids',
+        fieldAssociation: 'PointData',
+        operation: 'Below',
+        value: 1000,
+      },
+    ]);
+
+    console.log(thresholder);
+    // 获取输出数据
+    const outputData = thresholder.getOutputData();
+    console.log(outputData);
+    polyData = outputData;
     // console.log('polyData.getCellData().getScalars().getName()', polyData.getCellData().getScalars().getName());
 
     // console.log('polyData.getCellData().getScalars().getRange()', polyData.getCellData().getScalars().getRange());
     // console.log('polyData.getCellData().getScalars().getRange()', polyData.getCellData().getScalars().getRange());
     // 获取标量数据并将其应用到模型
     const scalars = polyData.getCellData().getScalars();
-    console.log(scalars);
+    console.log('scalars', scalars);
 
     mapper.setColorModeToMapScalars();
     lut.value.setVectorModeToMagnitude();
@@ -230,13 +255,12 @@ function updateRendererWithVtp(polyData) {
       // colorTransferFunction.addRGBPoint(minScalarValue.value, 0.0, 0.0, 1.0);  // 最小密度 -> 蓝色
       // colorTransferFunction.addRGBPoint(maxScalarValue.value, 1.0, 0.0, 0.0);  // 最大密度 -> 红色
       // mapper.setLookupTable(colorTransferFunction);
-      mapper.setInputData(polyData);  // 更新 Mapper 的输入数据为加载的 VTP 数据
     }
 
     // 获取简化后的 PolyData
 
     mapper.setInputData(polyData);
-
+    // mapper.setInputConnection(thresholder.getOutputPort());
     lut.value.setRange(parseFloat(minScalarValue.value), parseFloat(maxScalarValue.value));
     scalarBarActor.setScalarsToColors(lut.value);
     // 设置 ScalarBar 的显示
@@ -245,7 +269,6 @@ function updateRendererWithVtp(polyData) {
     } else {
       renderer.removeActor(scalarBarActor);
     }
-    polyData.ComputeBounds()
     const bounds = polyData.getBounds();
     console.log('bounds', bounds);
     // -90.0999984741211, 65.39999389648438, -15.600000381469727, 6539.39990234375, -1940.18994140625, 12.8100004196167

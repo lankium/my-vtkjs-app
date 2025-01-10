@@ -9,16 +9,18 @@ import VTR from './components/VTR.vue'
 import Slice from './components/Slice.vue'
 import Slice2 from './components/Slice2.vue'
 import VTKRead from './components/VTKRead.vue'
+import ClipClosedSurface from './components/ClipClosedSurface.vue'
 </script>
 
 <template>
   <!-- <HelloWorld /> -->
-  <!-- <VTP></VTP> -->
+  <VTP></VTP>
   <!-- <VTKRead></VTKRead> -->
   <!-- <Plane></Plane> -->
+  <!-- <ClipClosedSurface></ClipClosedSurface> -->
   <!-- <Slice></Slice> -->
   <!-- <Slice2></Slice2> -->
-  <ScalarBar></ScalarBar>
+  <!-- <ScalarBar></ScalarBar> -->
   <!-- <VTR></VTR> -->
   <!-- <VTI></VTI> -->
 
