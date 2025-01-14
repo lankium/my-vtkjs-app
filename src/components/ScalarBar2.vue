@@ -76,10 +76,9 @@ import vtkMapper from '@kitware/vtk.js/Rendering/Core/Mapper';
 import vtkXMLPolyDataReader from '@kitware/vtk.js/IO/XML/XMLPolyDataReader';  // 引入VTP文件读取器
 
 import vtkScalarBarActor from '@kitware/vtk.js/Rendering/Core/ScalarBarActor';
-import vtkColorTransferFunction from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction';
-import vtkLookupTable from '@kitware/vtk.js/Common/Core/LookupTable';
 
-import { Scale } from '@kitware/vtk.js/Rendering/Core/ColorTransferFunction/Constants';
+import vtkLight from '@kitware/vtk.js/Rendering/Core/Light';
+import vtkRenderWindowInteractor from '@kitware/vtk.js/Rendering/Core/RenderWindowInteractor';
 
 import * as d3 from 'd3-scale';
 import { formatDefaultLocale } from 'd3-format';
@@ -139,7 +138,7 @@ function generateTicks(numberOfTicks) {
 function updateRendererWithVtp(polyData) {
   if (context.value) {
     const { actor, mapper, renderWindow, renderer } = context.value;
-    // const lut = mapper.getLookupTable();
+    const lut = mapper.getLookupTable();
     console.log('polyData', polyData);
 
     console.log('polyData.getCellData', polyData.getCellData());
@@ -159,9 +158,20 @@ function updateRendererWithVtp(polyData) {
       maxScalarValue.value = scalarRange[1];
 
     }
+    // Add one positional light
+
+    const light = vtkLight.newInstance();
+    // 设置光源颜色为稍微暗一些的色调
+    light.setColor(200 / 255, 200 / 255, 200 / 255);  // 调低颜色值
+    // 设置光源强度，降低亮度
+    light.setIntensity(0.5); // 调低强度到 0.5
+    light.setLightTypeToCameraLight()
+    renderer.addLight(light);
+    lut.setRange(parseFloat(minScalarValue.value), parseFloat(maxScalarValue.value));
     // 设置Mapper的输入数据为加载的VTP数据
     mapper.setInputData(polyData);
-
+    mapper.setScalarVisibility(true);
+    mapper.setUseLookupTableScalarRange(true);
     // lut.setRange(parseFloat(minScalarValue.value), parseFloat(maxScalarValue.value));
     // scalarBarActor.setScalarsToColors(lut);
     // // 设置 ScalarBar 的显示
@@ -194,101 +204,31 @@ watch(opacity, (newOpacity) => {
 });
 
 // 监听 Scalar 范围变化
-watch(minScalarValue, () => {
-  if (context.value) {
-    const { mapper, renderWindow } = context.value;
-    // 更新标量数据范围
-    const lut = mapper.getLookupTable();
-    mapper.setUseLookupTableScalarRange(true);
-    lut.setRange(parseFloat(minScalarValue.value), lut.getRange()[1]);
-    renderWindow.render();
-  }
-});
+// watch(minScalarValue, () => {
+//   if (context.value) {
+//     const { mapper, renderWindow } = context.value;
+//     // 更新标量数据范围
+//     const lut = mapper.getLookupTable();
+//     mapper.setUseLookupTableScalarRange(true);
+//     lut.setRange(parseFloat(minScalarValue.value), lut.getRange()[1]);
+//     renderWindow.render();
+//   }
+// });
 
-// 监听 Scalar 范围变化
-watch(maxScalarValue, () => {
-  if (context.value) {
-    const { mapper, renderWindow } = context.value;
-    // 更新标量数据范围
-    const lut = mapper.getLookupTable();
-    mapper.setUseLookupTableScalarRange(true);
-    lut.setRange(lut.getRange()[0], parseFloat(maxScalarValue.value));
-    renderWindow.render();
-  }
-});
+// // 监听 Scalar 范围变化
+// watch(maxScalarValue, () => {
+//   if (context.value) {
+//     const { mapper, renderWindow } = context.value;
+//     // 更新标量数据范围
+//     const lut = mapper.getLookupTable();
+//     mapper.setUseLookupTableScalarRange(true);
+//     lut.setRange(lut.getRange()[0], parseFloat(maxScalarValue.value));
+//     renderWindow.render();
+//   }
+// });
 
 // 监听 Scalar Bar 显示状态变化
-watch(scalarBarVisible, () => {
-  if (context.value) {
-    const { mapper, renderer, renderWindow } = context.value;
-    if (scalarBarVisible.value) {
-      mapper.setScalarVisibility(true);
-      renderer.addActor(scalarBarActor);
 
-    } else {
-      mapper.setScalarVisibility(false);
-      renderer.removeActor(scalarBarActor);
-    }
-    renderWindow.render()
-  }
-});
-
-watch(useColorTransfer, () => {
-  // 设置颜色映射
-  if (context.value) {
-    const { mapper, renderWindow } = context.value;
-    if (useColorTransfer.value) {
-      const ctf = vtkColorTransferFunction.newInstance({
-        discretize: true,
-        numberOfValues: parseInt(numberOfColorsInput.value, 10),
-        scale: Scale.LOG10,
-      });
-      // 设置最大密度 -> 红色
-      ctf.addRGBPoint(1, 1.0, 0.0, 0.0);
-
-      // 设置中间密度（假设为 0.5），设置为白色
-      ctf.addRGBPoint(0.5, 1.0, 1.0, 1.0);  // 中间 -> 白色
-
-      // 设置最小密度 -> 蓝色
-      ctf.addRGBPoint(0, 0.0, 0.0, 1.0);
-
-      // 应用颜色映射
-      mapper.setLookupTable(ctf);
-    } else {
-      const numberOfColors = parseInt(numberOfColorsInput.value, 10);
-      mapper.setLookupTable(vtkLookupTable.newInstance({ numberOfColors }));
-    }
-
-    const lut = mapper.getLookupTable();
-    lut.setRange(parseFloat(minScalarValue.value), parseFloat(maxScalarValue.value));
-    mapper.setColorModeToMapScalars();
-    lut.setVectorModeToMagnitude();
-    scalarBarActor.setScalarsToColors(lut);
-    renderWindow.render()
-  }
-})
-
-watch(numberOfColorsInput, () => {
-  if (context.value) {
-    const { mapper, renderWindow } = context.value;
-    const lut = mapper.getLookupTable();
-
-    if (lut.isA('vtkLookupTable')) {
-      lut.setNumberOfColors(parseInt(numberOfColors.value, 10));
-      lut.modified();
-      lut.build();
-    } else {
-      const numberOfColors = parseInt(numberOfColorsInput.value, 10);
-      mapper.setLookupTable(vtkLookupTable.newInstance({ numberOfColors }));
-    }
-    lut.modified();
-    mapper.setColorModeToMapScalars();
-
-    scalarBarActor.setScalarsToColors(lut);
-    scalarBarActor.modified();
-    renderWindow.render();
-  }
-})
 
 // 观察表示方式的变化，并更新渲染器
 watch(representation, () => {
@@ -316,14 +256,6 @@ onMounted(() => {
     // 创建Mapper
     const mapper = vtkMapper.newInstance();
 
-    // 设置标量数据范围
-
-    // const lut = mapper.getLookupTable();
-    // lut.setRange(parseFloat(minScalarValue.value), parseFloat(maxScalarValue.value));
-    // scalarBarActor.setGenerateTicks(generateTicks(20));
-    // scalarBarActor.setScalarsToColors(lut);
-    // 设置 ScalarBar 的显示
-
     // 创建Actor并将Mapper关联到Actor
     const actor = vtkActor.newInstance();
     actor.setMapper(mapper);
@@ -331,13 +263,32 @@ onMounted(() => {
     // 获取渲染器和渲染窗口
     const renderer = fullScreenRenderer.getRenderer();
     const renderWindow = fullScreenRenderer.getRenderWindow();
-
+    // 创建交互器
+    const iren = vtkRenderWindowInteractor.newInstance();
+    iren.setRenderWindow(renderWindow);
     // 将Actor添加到渲染器
     renderer.addActor(actor);
     // 将 ScalarBarActor 添加到渲染器中
     // 重置相机并开始渲染
+    // 获取相机并设置视角
+    const camera = renderer.getActiveCamera();
+
+    // 设置相机的Elevation（垂直角度）
+    camera.elevation(60.0); // 垂直方向上抬升 60 度
+
+    // 设置相机的Azimuth（水平方向角度）
+    camera.azimuth(30.0); // 水平旋转 30 度
+
+    // 设置相机的Zoom（缩放）
+    camera.zoom(1.0); // 默认缩放为 1.0
+
+    // 重置相机视角
     renderer.resetCamera();
-    // renderWindow.render();
+    renderWindow.addRenderer(renderer);
+
+    // 渲染并启动交互
+    renderWindow.render();
+    iren.start();
 
     // 存储上下文，包含渲染器、窗口、Actor和Mapper
     context.value = {
